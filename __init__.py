@@ -93,6 +93,21 @@ PAUSE_SCHEMA = {
     },
 }
 
+SNAPSHOT_SCHEMA = {
+    "name": "printer_snapshot",
+    "description": (
+        "Grab a camera snapshot from a printer. Returns the image file path — "
+        "share it with the user via MEDIA: syntax. Fails cleanly if the "
+        "printer has no camera."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "printer": {"type": "string", "description": "Printer name."},
+        },
+    },
+}
+
 # ================================================================ config
 
 
@@ -329,33 +344,62 @@ def _files(printer: str = None) -> str:
 
 
 def _print_cmd(printer: str = None, filename: str = "") -> str:
+    import anycubic
+
     printers = _printers()
     name, cfg = _resolve(printer, printers)
     if cfg["kind"] == "anycubic":
-        return ("Anycubic print-start lands with upload+print in the next build "
-                "(protocol verified, implementation pending).")
+        rep = anycubic.print_control(cfg["host"], "start", filename or None)
+        if rep.get("code") == 200:
+            return f"Print started on {name}: {filename}"
+        return (f"{name}: printer rejected the start "
+                f"(code {rep.get('code')}: {rep.get('msg', '?')})")
     return _m_print(filename)
 
 
 def _cancel(printer: str = None, confirm: bool = False) -> str:
+    import anycubic
+
     printers = _printers()
     name, cfg = _resolve(printer, printers)
     if not confirm:
         return "Not cancelling — call again with confirm=true to stop the print."
     if cfg["kind"] == "anycubic":
-        return "Anycubic cancel arrives with print control in the next build."
+        rep = anycubic.print_control(cfg["host"], "stop")
+        return f"{name}: print cancelled (code {rep.get('code')})." if rep.get("code") == 200 \
+            else f"{name}: cancel rejected (code {rep.get('code')})"
     return _m_cancel(confirm)
 
 
 def _pause_resume(printer: str = None, action: str = "") -> str:
+    import anycubic
+
     printers = _printers()
     name, cfg = _resolve(printer, printers)
     action = (action or "").lower().strip()
     if action not in ("pause", "resume"):
         return "action must be 'pause' or 'resume'"
     if cfg["kind"] == "anycubic":
-        return "Anycubic pause/resume arrives with print control in the next build."
+        rep = anycubic.print_control(cfg["host"], action)
+        if rep.get("code") == 200:
+            return f"{name}: print {action}d."
+        return f"{name}: {action} rejected (code {rep.get('code')}: {rep.get('msg', '?')})"
     return _m_pause_resume(action)
+
+
+def _snapshot(printer: str = None) -> str:
+    import tempfile
+
+    import anycubic
+
+    printers = _printers()
+    name, cfg = _resolve(printer, printers)
+    if cfg["kind"] != "anycubic":
+        return "Snapshots are Anycubic-LAN only right now (Moonraker camera = roadmap)."
+    out = os.path.join(tempfile.gettempdir(), "pw-cam")
+    os.makedirs(out, exist_ok=True)
+    path = anycubic.camera_snapshot(cfg["host"], os.path.join(out, f"{name}.jpg"))
+    return path
 
 
 # ================================================================ register
@@ -366,3 +410,4 @@ def register(ctx) -> None:
     ctx.register_tool(name="printer_print", toolset="printwatch", schema=PRINT_SCHEMA, handler=_print_cmd)
     ctx.register_tool(name="printer_cancel", toolset="printwatch", schema=CANCEL_SCHEMA, handler=_cancel)
     ctx.register_tool(name="printer_pause_resume", toolset="printwatch", schema=PAUSE_SCHEMA, handler=_pause_resume)
+    ctx.register_tool(name="printer_snapshot", toolset="printwatch", schema=SNAPSHOT_SCHEMA, handler=_snapshot)

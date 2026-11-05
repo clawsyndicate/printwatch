@@ -34,3 +34,4 @@ provides_tools:
   - printer_print
   - printer_cancel
   - printer_pause_resume
+  - printer_snapshot

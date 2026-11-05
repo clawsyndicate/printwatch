@@ -206,3 +206,97 @@ def snapshot_reports(host: str, wait: float = 5.0) -> tuple[MqttSession, list[di
         return s, ps.collect(wait)
     finally:
         ps.stop()
+
+
+# --------------------------------------------------------------------------
+# Camera: MQTT startCapture -> HTTP-FLV stream -> ffmpeg frame grab
+# --------------------------------------------------------------------------
+
+CAMERA_NO_CAMERA = 11401  # printer's own error code: camera not connected
+
+
+def camera_snapshot(host: str, out_path: str, settle: float = 2.5) -> str:
+    """Start the camera stream and grab one frame. Returns out_path.
+
+    Raises AdapterError with a clear message when the printer has no camera.
+    """
+    import subprocess as sp
+
+    s = handshake(host)
+    ps = PrinterSession(s)
+    try:
+        if not ps.connected.wait(8):
+            raise AdapterError(f"{host}: broker connection failed")
+        cmd = json.dumps({"type": "video", "action": "startCapture",
+                          "timestamp": int(time.time() * 1000),
+                          "msgid": uuid.uuid4().hex, "data": None})
+        ps._c.publish(f"{TOPIC_ROOT}/web/printer/{s.model_id}/{s.device_id}/video", cmd)
+        deadline = time.time() + 6
+        rep = None
+        while time.time() < deadline:
+            rep = next((r for r in ps.reports if r.get("type") == "video"), None)
+            if rep:
+                break
+            time.sleep(0.3)
+    finally:
+        ps.stop()
+
+    if not rep:
+        raise AdapterError(f"{host}: camera start got no response")
+    if rep.get("code") == CAMERA_NO_CAMERA or rep.get("state") == "initFailed":
+        raise AdapterError(f"{host}: no camera on this printer (code {rep.get('code')})")
+
+    flv = s.rtsp_url  # actually an HTTP-FLV stream (http://<ip>:18088/flv)
+    if not flv:
+        raise AdapterError(f"{host}: no stream URL in session info")
+    r = sp.run(["ffmpeg", "-y", "-i", flv, "-frames:v", "1", "-q:v", "3", out_path],
+               capture_output=True, text=True, timeout=25)
+    import os
+    if r.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) < 1000:
+        raise AdapterError(f"{host}: frame grab failed (stream may need a retry)")
+    return out_path
+
+
+# --------------------------------------------------------------------------
+# Print control: start (slicer topic) / pause / resume / stop (web topic)
+# --------------------------------------------------------------------------
+
+def print_control(host: str, action: str, filename: str | None = None) -> dict:
+    """Fire a print command; return the printer's acknowledgement report.
+
+    action: start | pause | resume | stop. `start` needs a filename that is
+    already on the printer's local storage (as listed by listLocal).
+    """
+    if action not in ("start", "pause", "resume", "stop"):
+        raise AdapterError(f"unknown action {action!r}")
+    s = handshake(host)
+    ps = PrinterSession(s)
+    try:
+        if not ps.connected.wait(8):
+            raise AdapterError(f"{host}: broker connection failed")
+        if action == "start":
+            if not filename:
+                raise AdapterError("start requires a filename (see listLocal)")
+            data = {"taskid": "-1", "filename": filename, "filetype": 1,
+                    "task_mode": 1, "project_type": 1}
+        else:
+            data = {"taskid": "-1"}
+        payload = json.dumps({"type": "print", "action": action,
+                              "timestamp": int(time.time() * 1000),
+                              "msgid": uuid.uuid4().hex, "data": data})
+        # print/start goes on the SLICER topic; pause/resume/stop work from web
+        prefix = "slicer" if action == "start" else "web"
+        ps._c.publish(f"{TOPIC_ROOT}/{prefix}/printer/{s.model_id}/{s.device_id}/print", payload)
+        deadline = time.time() + 7
+        rep = None
+        while time.time() < deadline:
+            rep = next((r for r in ps.reports
+                        if r.get("type") == "print" and r.get("action") == action), None)
+            if rep:
+                break
+            time.sleep(0.3)
+    finally:
+        ps.stop()
+    if not rep:
+        raise AdapterError(f"{host}: {action} got no acknowledgement in 7s")
+    return rep
