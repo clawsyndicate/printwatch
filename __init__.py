@@ -151,7 +151,10 @@ def _anycubic_status(host: str) -> str:
         f"bed {t.get('curr_hotbed_temp', '?')}/{t.get('target_hotbed_temp', 0)}C",
     ]
     project = d.get("project")
-    if project:
+    # Cosmetic residue: a stopped job's envelope can linger as state "stopping"/
+    # "stoped" while top-level state is "free" (verified on fleet 2026-11-05).
+    # Top-level state is authoritative — free + stopping/stoped = idle.
+    if project and not (state == "free" and project.get("state") in ("stopping", "stoped")):
         fn = (project.get("filename") or "?").rsplit("/", 1)[-1]
         remain = project.get("remain_time", 0) or 0
         remain_s = f", ~{remain // 60}m remaining" if remain else ""

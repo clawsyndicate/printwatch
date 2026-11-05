@@ -4,7 +4,13 @@
 Entry = plugin PR to catalog + <90s demo video on X + form.
 
 ## Day plan
-- [x] **Wed Nov 5 (tonight): scaffold** — manifest, 5 tools, clean `plugins doctor` pass
+- [x] **Wed Nov 5: scaffold** — manifest, 5 tools, clean `plugins doctor` pass
+- [x] **Wed Nov 5 LATE NIGHT (ahead of schedule): AnycubicAdapter monitoring DONE** —
+      fleet found by vendor scan (FN-Link OUI) + screens; LAN Mode on 3/3; handshake
+      + MQTT telemetry + file listing VERIFIED LIVE; tool handlers run end-to-end
+      (printer_status all-3 threaded ~9s; printer_files 589 files on kobra-1);
+      kobra-2 has a PAUSED job since Nov 3 (White(02), 32s in) — user to decide.
+      Commit 771da4a. Clean-room: AGPL ref read for facts only.
 - [ ] **Thu Nov 6:** AnycubicAdapter monitoring — handshake (:18910/info → signed /ctrl →
       AES → MQTT :9883), telemetry, multi-printer status tools against live Kobra 3 V2
 - [ ] **Fri Nov 7:** upload+print via the **fileUploadurl recipe** (see RECIPE section) —
