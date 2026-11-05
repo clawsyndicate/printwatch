@@ -81,7 +81,7 @@ models = still need GUI (out of scope). Demo line: "text your agent an STL, it p
 2. **Send a .gcode.3mf file INTO the Telegram chat** → agent uploads to printer 2 →
    print starts (25s — THE beat: file in, print out, from a phone)
 3. Cut to the Kobra actually printing the file we just sent (10s)
-4. "Snapshot the camera on printer one" → image appears in chat (10s)
+4. "Snapshot the camera on printer two" → image appears in chat (10s; kobra-2 = the one with a camera)
 5. Walk away; phone buzzes: "print done ✓" Telegram push (10s)
 6. Desktop pane glamour shot (10s)
 7. "Stock firmware, no cloud, no rooting — and Klipper/Moonraker printers work too"

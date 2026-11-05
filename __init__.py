@@ -149,7 +149,10 @@ def _resolve(name: str | None, printers: dict) -> tuple[str, dict]:
 # ================================================================ anycubic handlers
 
 def _anycubic_status(host: str) -> str:
-    import anycubic  # sibling module in this plugin directory
+    try:
+        import anycubic  # dev context (plugin dir on sys.path)
+    except ImportError:
+        from . import anycubic  # installed-package context
 
     _, reports = anycubic.snapshot_reports(host, wait=4.0)
     info = next((r for r in reversed(reports) if r.get("type") == "info"), None)
@@ -185,7 +188,10 @@ def _anycubic_status(host: str) -> str:
 def _anycubic_files(host: str) -> str:
     import uuid as _uuid
 
-    import anycubic
+    try:
+        import anycubic
+    except ImportError:
+        from . import anycubic
 
     s = anycubic.handshake(host)
     ps = anycubic.PrinterSession(s)
@@ -344,7 +350,10 @@ def _files(printer: str = None) -> str:
 
 
 def _print_cmd(printer: str = None, filename: str = "") -> str:
-    import anycubic
+    try:
+        import anycubic
+    except ImportError:
+        from . import anycubic
 
     printers = _printers()
     name, cfg = _resolve(printer, printers)
@@ -358,7 +367,10 @@ def _print_cmd(printer: str = None, filename: str = "") -> str:
 
 
 def _cancel(printer: str = None, confirm: bool = False) -> str:
-    import anycubic
+    try:
+        import anycubic
+    except ImportError:
+        from . import anycubic
 
     printers = _printers()
     name, cfg = _resolve(printer, printers)
@@ -372,7 +384,10 @@ def _cancel(printer: str = None, confirm: bool = False) -> str:
 
 
 def _pause_resume(printer: str = None, action: str = "") -> str:
-    import anycubic
+    try:
+        import anycubic
+    except ImportError:
+        from . import anycubic
 
     printers = _printers()
     name, cfg = _resolve(printer, printers)
@@ -390,7 +405,10 @@ def _pause_resume(printer: str = None, action: str = "") -> str:
 def _snapshot(printer: str = None) -> str:
     import tempfile
 
-    import anycubic
+    try:
+        import anycubic
+    except ImportError:
+        from . import anycubic
 
     printers = _printers()
     name, cfg = _resolve(printer, printers)
