@@ -3,11 +3,13 @@
 A Hermes Agent plugin for controlling 3D printers over the local network — no cloud,
 no rooting, stock firmware.
 
-**Dual protocol:**
-- **Klipper/Moonraker** printers via HTTP/WebSocket (standard open protocol)
+**Three protocol families:**
 - **Anycubic Kobra** printers via the built-in **LAN Mode** API (reverse-engineered,
   clean-room implementation — handshake, MQTT telemetry, file management, print control,
   camera snapshots, and a full headless slice-to-print pipeline)
+- **Bambu Lab** printers (X1/P1/A1 family) via their local MQTT/FTPS interface —
+  status, control, file upload, RTSP snapshots; just host + serial + LAN access code
+- **Klipper/Moonraker** printers via HTTP (standard open protocol)
 
 ## Why
 
