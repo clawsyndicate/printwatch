@@ -1,10 +1,11 @@
 id: printwatch
 name: PrintWatch
-version: 0.3.0
+version: 0.4.0
 description: >
-  Control and monitor 3D printers through your Hermes agent. Two protocol
-  families: Klipper/Moonraker printers over HTTP, and stock-firmware Anycubic
-  Kobra printers over LAN Mode (handshake + MQTT — no cloud, no rooting).
+  Control and monitor 3D printers through your Hermes agent. Three protocol
+  families: Klipper/Moonraker printers over HTTP, stock-firmware Anycubic
+  Kobra printers over LAN Mode (handshake + MQTT — no cloud, no rooting),
+  and Bambu Lab printers over their local MQTT/FTPS interface (access code).
   Multi-printer: ask for one printer or a summary table of all. File listing,
   print start/pause/resume/cancel, file upload, camera snapshots delivered
   into chat, and a headless slice-to-print pipeline (raw .gcode -> Anycubic
@@ -16,6 +17,12 @@ requires_env:
     description: >
       JSON map of Anycubic LAN printers, e.g.
       '{"kobra-1": {"host": "192.168.50.215"}}'
+    required: false
+  - name: PRINTWATCH_BAMBU
+    description: >
+      JSON map of Bambu Lab printers with host, serial and LAN access code
+      (screen: Settings -> Network), e.g. '{"x1c": {"host": "192.168.50.10",
+      "serial": "00M00A123400001", "access_code": "12345678"}}'
     required: false
   - name: PRINTWATCH_MOONRAKER_URL
     description: Base URL of a Moonraker API (e.g. http://192.168.50.60:7125) for Klipper printers

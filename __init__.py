@@ -123,10 +123,18 @@ def _printers() -> dict[str, dict]:
     moon = os.environ.get("PRINTWATCH_MOONRAKER_URL", "").strip()
     if moon:
         out["moonraker"] = {"kind": "moonraker", "host": moon.rstrip("/")}
+    raw_b = os.environ.get("PRINTWATCH_BAMBU", "").strip()
+    if raw_b:
+        try:
+            for name, cfg in json.loads(raw_b).items():
+                out[name.strip()] = {**cfg, "kind": "bambu"}
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"PRINTWATCH_BAMBU is not valid JSON: {e}") from e
     if not out:
         raise RuntimeError(
             "No printers configured — set PRINTWATCH_PRINTERS (JSON map of "
-            "Anycubic LAN printers) or PRINTWATCH_MOONRAKER_URL"
+            "Anycubic LAN printers), PRINTWATCH_BAMBU (JSON map with host/serial/"
+            "access_code), or PRINTWATCH_MOONRAKER_URL"
         )
     return out
 
@@ -318,20 +326,59 @@ def _m_pause_resume(action: str) -> str:
     return f"Print {action}d."
 
 
+# ================================================================ bambu handlers
+
+def _bambu_mod():
+    try:
+        import bambu  # dev context (plugin dir on sys.path)
+    except ImportError:
+        from . import bambu  # installed-package context
+    return bambu
+
+
+def _bambu_args(cfg: dict) -> tuple[str, str, str]:
+    for k in ("host", "serial", "access_code"):
+        if not cfg.get(k):
+            raise RuntimeError(f"PRINTWATCH_BAMBU entry missing {k!r}")
+    return cfg["host"], cfg["serial"], cfg["access_code"]
+
+
+def _bambu_status(cfg: dict) -> str:
+    st = _bambu_mod().status(*_bambu_args(cfg))
+    lines = [f"state: {st['state']}"]
+    if st.get("progress") is not None:
+        lines.append(f"progress: {st['progress']}%  layer: {st.get('layer')}/{st.get('total_layers')}")
+    if st.get("nozzle_temp") is not None:
+        lines.append(f"nozzle: {st['nozzle_temp']}C  bed: {st['bed_temp']}C"
+                     + (f"  chamber: {st['chamber_temp']}C" if st.get("chamber_temp") else ""))
+    if st.get("filename"):
+        lines.append(f"job: {st['filename']}")
+    if st.get("remain_time"):
+        lines.append(f"remaining: {st['remain_time']}")
+    return "\n".join(lines)
+
+
 # ================================================================ dispatchers
 
 def _status(printer: str = None) -> str:
     printers = _printers()
+
+    def _one_status(cfg):
+        if cfg["kind"] == "anycubic":
+            return _anycubic_status(cfg["host"])
+        if cfg["kind"] == "bambu":
+            return _bambu_status(cfg)
+        return _m_status()
+
     if printer:
         _, cfg = _resolve(printer, printers)
-        return _anycubic_status(cfg["host"]) if cfg["kind"] == "anycubic" else _m_status()
+        return _one_status(cfg)
     results = {}
 
     def one(item):
         name, cfg = item
         try:
-            return name, (_anycubic_status(cfg["host"]) if cfg["kind"] == "anycubic"
-                          else _m_status())
+            return name, _one_status(cfg)
         except Exception as e:
             return name, f"ERROR: {type(e).__name__}: {e}"
 
@@ -346,17 +393,32 @@ def _files(printer: str = None) -> str:
     _, cfg = _resolve(printer, printers)
     if cfg["kind"] == "anycubic":
         return _anycubic_files(cfg["host"])
+    if cfg["kind"] == "bambu":
+        host, serial, code = _bambu_args(cfg)
+        entries = _bambu_mod().list_files(host, serial, code)
+        files = [e for e in entries if not e.get("is_dir")]
+        if not files:
+            return "storage: no files"
+        return "\n".join(f"{e['filename']} ({e['size']/1e6:.1f} MB)" for e in files)
     return _m_files()
 
 
 def _print_cmd(printer: str = None, filename: str = "") -> str:
+    printers = _printers()
+    name, cfg = _resolve(printer, printers)
+    if cfg["kind"] == "bambu":
+        host, serial, code = _bambu_args(cfg)
+        rep = _bambu_mod().print_control(host, serial, code, "start", filename or None)
+        if rep.get("code") == 200:
+            return f"Print started on {name}: {filename}"
+        return (f"{name}: printer rejected the start "
+                f"(result {rep.get('result')}: {rep.get('msg', '?')})")
+
     try:
         import anycubic
     except ImportError:
         from . import anycubic
 
-    printers = _printers()
-    name, cfg = _resolve(printer, printers)
     if cfg["kind"] == "anycubic":
         rep = anycubic.print_control(cfg["host"], "start", filename or None)
         if rep.get("code") == 200:
@@ -367,15 +429,19 @@ def _print_cmd(printer: str = None, filename: str = "") -> str:
 
 
 def _cancel(printer: str = None, confirm: bool = False) -> str:
+    printers = _printers()
+    name, cfg = _resolve(printer, printers)
+    if not confirm:
+        return "Not cancelling — call again with confirm=true to stop the print."
+    if cfg["kind"] == "bambu":
+        host, serial, code = _bambu_args(cfg)
+        rep = _bambu_mod().print_control(host, serial, code, "stop")
+        return f"{name}: print cancelled (result {rep.get('result')})."
     try:
         import anycubic
     except ImportError:
         from . import anycubic
 
-    printers = _printers()
-    name, cfg = _resolve(printer, printers)
-    if not confirm:
-        return "Not cancelling — call again with confirm=true to stop the print."
     if cfg["kind"] == "anycubic":
         rep = anycubic.print_control(cfg["host"], "stop")
         return f"{name}: print cancelled (code {rep.get('code')})." if rep.get("code") == 200 \
@@ -384,16 +450,23 @@ def _cancel(printer: str = None, confirm: bool = False) -> str:
 
 
 def _pause_resume(printer: str = None, action: str = "") -> str:
-    try:
-        import anycubic
-    except ImportError:
-        from . import anycubic
-
     printers = _printers()
     name, cfg = _resolve(printer, printers)
     action = (action or "").lower().strip()
     if action not in ("pause", "resume"):
         return "action must be 'pause' or 'resume'"
+    if cfg["kind"] == "bambu":
+        host, serial, code = _bambu_args(cfg)
+        rep = _bambu_mod().print_control(host, serial, code, action)
+        if rep.get("code") == 200:
+            return f"{name}: print {action}d."
+        return f"{name}: {action} rejected (result {rep.get('result')}: {rep.get('msg', '?')})"
+
+    try:
+        import anycubic
+    except ImportError:
+        from . import anycubic
+
     if cfg["kind"] == "anycubic":
         rep = anycubic.print_control(cfg["host"], action)
         if rep.get("code") == 200:
@@ -405,17 +478,22 @@ def _pause_resume(printer: str = None, action: str = "") -> str:
 def _snapshot(printer: str = None) -> str:
     import tempfile
 
+    printers = _printers()
+    name, cfg = _resolve(printer, printers)
+    out = os.path.join(tempfile.gettempdir(), "pw-cam")
+    os.makedirs(out, exist_ok=True)
+    if cfg["kind"] == "bambu":
+        host, serial, code = _bambu_args(cfg)
+        return _bambu_mod().camera_snapshot(host, serial, code,
+                                            os.path.join(out, f"{name}.jpg"))
+
     try:
         import anycubic
     except ImportError:
         from . import anycubic
 
-    printers = _printers()
-    name, cfg = _resolve(printer, printers)
     if cfg["kind"] != "anycubic":
-        return "Snapshots are Anycubic-LAN only right now (Moonraker camera = roadmap)."
-    out = os.path.join(tempfile.gettempdir(), "pw-cam")
-    os.makedirs(out, exist_ok=True)
+        return "Snapshots: supported for Anycubic-LAN and Bambu (RTSP) printers."
     path = anycubic.camera_snapshot(cfg["host"], os.path.join(out, f"{name}.jpg"))
     return path
 
