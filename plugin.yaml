@@ -1,12 +1,14 @@
 id: printwatch
 name: PrintWatch
-version: 0.2.0
+version: 0.3.0
 description: >
   Control and monitor 3D printers through your Hermes agent. Two protocol
   families: Klipper/Moonraker printers over HTTP, and stock-firmware Anycubic
   Kobra printers over LAN Mode (handshake + MQTT — no cloud, no rooting).
   Multi-printer: ask for one printer or a summary table of all. File listing,
-  print start/cancel/pause, with file upload + camera snapshots planned.
+  print start/pause/resume/cancel, file upload, camera snapshots delivered
+  into chat, and a headless slice-to-print pipeline (raw .gcode -> Anycubic
+  .gcode.3mf dialect -> upload -> print).
 category: tools
 entrypoint: __init__.py
 requires_env:
