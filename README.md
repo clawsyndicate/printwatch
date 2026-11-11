@@ -24,23 +24,29 @@ photo when something needs eyes.
 |---|---|
 | `printer_status` | Live status: temps, progress, layer, state across the fleet |
 | `printer_files` | List files on printer storage |
-| `printer_print` | Start a print by filename (or upload + start) |
+| `printer_print` | Start a print by filename (as listed by `printer_files`) |
+| `printer_upload` | Send a local `.gcode` to the printer (auto-packaged into the printer's dialect) and optionally start it |
 | `printer_cancel` | Cancel the running job |
 | `printer_pause_resume` | Pause / resume |
 | `printer_snapshot` | Grab a camera frame and drop it in your chat |
 
 ## Headless slice-to-print (the fun part)
 
-PrintWatch can take a raw `.gcode` from any slicer and repackage it into the exact
+`printer_upload` takes a raw `.gcode` from any slicer and repackages it into the exact
 `.gcode.3mf` dialect Anycubic's firmware requires (see `kobra_dialect.py`) — header
-blocks, `M75`, uppercase-MD5 sidecar, `X-ACNext` slice info — then upload it over
-LAN and start the print. No Anycubic account, no Slicer Next, no hands.
+blocks, `M75`, uppercase-MD5 sidecar, `X-ACNext` slice info — then uploads it over
+LAN and starts the print. Bambu `.gcode` files are packed into a 3mf the same way.
+No Anycubic account, no Slicer Next, no hands.
 
 ## Security posture
 
 - **Stock firmware only** — LAN Mode is a built-in feature; nothing is flashed or rooted
-- **Local network only** — no cloud relay, no telemetry, credentials stay in your session
+- **Local network only** — no cloud relay, no telemetry
+- **Credentials via `agent.secret_scope`** — config values are read through Hermes's
+  scoped secret layer, never `os.environ`
 - Session tokens are per-session, in-memory, never logged or persisted
+- Bambu RTSP snapshots run ffmpeg with the access code in the local process argv for
+  the ~2s capture window (local-only exposure; documented, error output scrubbed)
 
 ## Install
 

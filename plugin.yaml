@@ -1,15 +1,15 @@
 id: printwatch
 name: PrintWatch
-version: 0.4.0
+version: 0.4.1
 description: >
   Control and monitor 3D printers through your Hermes agent. Three protocol
   families: Klipper/Moonraker printers over HTTP, stock-firmware Anycubic
   Kobra printers over LAN Mode (handshake + MQTT — no cloud, no rooting),
   and Bambu Lab printers over their local MQTT/FTPS interface (access code).
   Multi-printer: ask for one printer or a summary table of all. File listing,
-  print start/pause/resume/cancel, file upload, camera snapshots delivered
-  into chat, and a headless slice-to-print pipeline (raw .gcode -> Anycubic
-  .gcode.3mf dialect -> upload -> print).
+  print start/pause/resume/cancel, file upload with auto-dialect packaging,
+  camera snapshots delivered into chat, and a headless slice-to-print
+  pipeline (raw .gcode -> Anycubic .gcode.3mf dialect -> upload -> print).
 category: tools
 entrypoint: __init__.py
 requires_env:
@@ -30,17 +30,24 @@ requires_env:
   - name: PRINTWATCH_MOONRAKER_API_KEY
     description: Moonraker one-shot access token, if your instance requires one
     required: false
-dependencies: requirements.txt
+python_dependencies:
+  - paho-mqtt>=2.0,<3
+  - requests>=2.31,<3
+  - cryptography>=42,<48
 permissions:
   network: local-only
   notes: >
     Talks only to user-configured printer endpoints on the LAN. No external
     services, no telemetry, no credentials stored. Printer session tokens are
-    per-session, in-memory only, and never logged.
+    per-session, in-memory only, and never logged. Credential values are read
+    through agent.secret_scope (never os.environ). Bambu RTSP snapshots run
+    ffmpeg with the access code in the local process argv for the duration of
+    the capture (~2s, local-only exposure).
 provides_tools:
   - printer_status
   - printer_files
   - printer_print
+  - printer_upload
   - printer_cancel
   - printer_pause_resume
   - printer_snapshot

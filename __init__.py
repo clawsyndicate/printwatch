@@ -3,8 +3,7 @@
 Ask your Hermes what the printers are doing, start/stop prints by name,
 and monitor progress. Multi-printer aware.
 
-Config:
-  PRINTWATCH_MOONRAKER_URL  — single Klipper/Moonraker printer (optional)
+Config (read through agent.secret_scope — never os.environ — inside Hermes):
   PRINTWATCH_PRINTERS       — JSON map of Anycubic LAN printers:
                               '{"kobra-1": {"host": "192.168.50.215"}, ...}'
 """
@@ -14,6 +13,7 @@ import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import requests
 
@@ -67,6 +67,31 @@ PRINT_SCHEMA = {
     },
 }
 
+UPLOAD_SCHEMA = {
+    "name": "printer_upload",
+    "description": (
+        "Upload a local .gcode file to a printer and start printing it. Anycubic: "
+        "raw gcode is auto-wrapped into the printer's dialect package. Bambu: gcode "
+        "is packed into a 3mf and uploaded over FTPS. Moonraker: uploaded to the "
+        "gcodes root. WARNING: this starts a physical print — confirm with the user first."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "printer": {"type": "string", "description": "Printer name."},
+            "path": {
+                "type": "string",
+                "description": "Full local path to the .gcode file (e.g. /home/you/print.gcode).",
+            },
+            "auto_print": {
+                "type": "boolean",
+                "description": "Start the print after upload (default true). Set false to only upload.",
+            },
+        },
+        "required": ["path"],
+    },
+}
+
 CANCEL_SCHEMA = {
     "name": "printer_cancel",
     "description": "Cancel the current print job. ALWAYS confirm with the user first.",
@@ -110,20 +135,47 @@ SNAPSHOT_SCHEMA = {
 
 # ================================================================ config
 
+_agent = None  # stashed by register(): the Hermes agent (secret_scope lives here)
+
+
+def _secret(name: str) -> str:
+    """Scoped credential read. Inside Hermes: agent.secret_scope.get_secret only —
+    catalog policy forbids plugins reading os.environ for credentials. Standalone
+    dev runs (no agent object) fall back to the plain environment."""
+    if _agent is not None:
+        scope = getattr(_agent, "secret_scope", None)
+        if scope is not None:
+            try:
+                v = scope.get_secret(name)
+            except Exception:
+                v = None
+            if v:
+                return str(v).strip()
+        return ""  # inside Hermes: fail closed, no env fallback
+    return os.environ.get(name, "").strip()
+
+
+def _plugin_data_dir() -> str:
+    """HERMES_HOME/plugin-data/printwatch/ — the catalog-standard plugin data dir."""
+    base = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
+    out = os.path.join(base, "plugin-data", "printwatch")
+    os.makedirs(out, exist_ok=True)
+    return out
+
 
 def _printers() -> dict[str, dict]:
     out: dict[str, dict] = {}
-    raw = os.environ.get("PRINTWATCH_PRINTERS", "").strip()
+    raw = _secret("PRINTWATCH_PRINTERS")
     if raw:
         try:
             for name, cfg in json.loads(raw).items():
                 out[name.strip()] = {**cfg, "kind": "anycubic"}
         except json.JSONDecodeError as e:
             raise RuntimeError(f"PRINTWATCH_PRINTERS is not valid JSON: {e}") from e
-    moon = os.environ.get("PRINTWATCH_MOONRAKER_URL", "").strip()
+    moon = _secret("PRINTWATCH_MOONRAKER_URL")
     if moon:
         out["moonraker"] = {"kind": "moonraker", "host": moon.rstrip("/")}
-    raw_b = os.environ.get("PRINTWATCH_BAMBU", "").strip()
+    raw_b = _secret("PRINTWATCH_BAMBU")
     if raw_b:
         try:
             for name, cfg in json.loads(raw_b).items():
@@ -233,14 +285,14 @@ def _anycubic_files(host: str) -> str:
 # ================================================================ moonraker handlers
 
 def _m_base() -> str:
-    url = os.environ.get("PRINTWATCH_MOONRAKER_URL", "").rstrip("/")
+    url = _secret("PRINTWATCH_MOONRAKER_URL").rstrip("/")
     if not url:
         raise RuntimeError("PRINTWATCH_MOONRAKER_URL is not set (e.g. http://<printer-ip>:7125)")
     return url
 
 
 def _m_headers() -> dict:
-    key = os.environ.get("PRINTWATCH_MOONRAKER_API_KEY", "")
+    key = _secret("PRINTWATCH_MOONRAKER_API_KEY")
     return {"X-Api-Key": key} if key else {}
 
 
@@ -359,8 +411,24 @@ def _bambu_status(cfg: dict) -> str:
 
 
 # ================================================================ dispatchers
+#
+# Hermes calls handlers as handler(args, **kwargs) where args is the dict of
+# schema parameters. Handlers NEVER raise — every error comes back as a string
+# so the agent sees it instead of a dead tool call.
 
-def _status(printer: str = None) -> str:
+def _err(e: Exception) -> str:
+    return f"ERROR: {type(e).__name__}: {e}"
+
+
+def _status(args: dict, **kwargs) -> str:
+    try:
+        printer = (args or {}).get("printer")
+        return _status_impl(printer)
+    except Exception as e:
+        return _err(e)
+
+
+def _status_impl(printer: str | None = None) -> str:
     printers = _printers()
 
     def _one_status(cfg):
@@ -388,7 +456,14 @@ def _status(printer: str = None) -> str:
     return "\n\n".join(f"== {n} ==\n{t}" for n, t in results.items())
 
 
-def _files(printer: str = None) -> str:
+def _files(args: dict, **kwargs) -> str:
+    try:
+        return _files_impl((args or {}).get("printer"))
+    except Exception as e:
+        return _err(e)
+
+
+def _files_impl(printer: str | None = None) -> str:
     printers = _printers()
     _, cfg = _resolve(printer, printers)
     if cfg["kind"] == "anycubic":
@@ -403,7 +478,15 @@ def _files(printer: str = None) -> str:
     return _m_files()
 
 
-def _print_cmd(printer: str = None, filename: str = "") -> str:
+def _print_cmd(args: dict, **kwargs) -> str:
+    try:
+        a = args or {}
+        return _print_cmd_impl(a.get("printer"), a.get("filename", ""))
+    except Exception as e:
+        return _err(e)
+
+
+def _print_cmd_impl(printer: str | None = None, filename: str = "") -> str:
     printers = _printers()
     name, cfg = _resolve(printer, printers)
     if cfg["kind"] == "bambu":
@@ -428,7 +511,15 @@ def _print_cmd(printer: str = None, filename: str = "") -> str:
     return _m_print(filename)
 
 
-def _cancel(printer: str = None, confirm: bool = False) -> str:
+def _cancel(args: dict, **kwargs) -> str:
+    try:
+        a = args or {}
+        return _cancel_impl(a.get("printer"), bool(a.get("confirm", False)))
+    except Exception as e:
+        return _err(e)
+
+
+def _cancel_impl(printer: str | None = None, confirm: bool = False) -> str:
     printers = _printers()
     name, cfg = _resolve(printer, printers)
     if not confirm:
@@ -449,7 +540,15 @@ def _cancel(printer: str = None, confirm: bool = False) -> str:
     return _m_cancel(confirm)
 
 
-def _pause_resume(printer: str = None, action: str = "") -> str:
+def _pause_resume(args: dict, **kwargs) -> str:
+    try:
+        a = args or {}
+        return _pause_resume_impl(a.get("printer"), a.get("action", ""))
+    except Exception as e:
+        return _err(e)
+
+
+def _pause_resume_impl(printer: str | None = None, action: str = "") -> str:
     printers = _printers()
     name, cfg = _resolve(printer, printers)
     action = (action or "").lower().strip()
@@ -475,12 +574,17 @@ def _pause_resume(printer: str = None, action: str = "") -> str:
     return _m_pause_resume(action)
 
 
-def _snapshot(printer: str = None) -> str:
-    import tempfile
+def _snapshot(args: dict, **kwargs) -> str:
+    try:
+        return _snapshot_impl((args or {}).get("printer"))
+    except Exception as e:
+        return _err(e)
 
+
+def _snapshot_impl(printer: str | None = None) -> str:
     printers = _printers()
     name, cfg = _resolve(printer, printers)
-    out = os.path.join(tempfile.gettempdir(), "pw-cam")
+    out = os.path.join(_plugin_data_dir(), "cam")
     os.makedirs(out, exist_ok=True)
     if cfg["kind"] == "bambu":
         host, serial, code = _bambu_args(cfg)
@@ -498,12 +602,76 @@ def _snapshot(printer: str = None) -> str:
     return path
 
 
+def _upload(args: dict, **kwargs) -> str:
+    try:
+        a = args or {}
+        return _upload_impl(a.get("printer"), str(a.get("path", "")),
+                            bool(a.get("auto_print", True)))
+    except Exception as e:
+        return _err(e)
+
+
+def _upload_impl(printer: str | None = None, path: str = "", auto: bool = True) -> str:
+    path = (path or "").strip()
+    if not path:
+        return "ERROR: path is required — give the full local path to a .gcode file."
+    if not os.path.isfile(path):
+        return f"ERROR: no such file: {path}"
+    if not path.lower().endswith((".gcode", ".3mf")):
+        return "ERROR: only .gcode (or packaged .3mf) files are supported."
+
+    printers = _printers()
+    name, cfg = _resolve(printer, printers)
+    fname = Path(path).name
+    uploaded = f"{name}: uploaded {fname}"
+
+    if cfg["kind"] == "bambu":
+        host, serial, code = _bambu_args(cfg)
+        rep = _bambu_mod().upload_and_print(host, serial, code, path, print_after=auto)
+        if not rep.get("uploaded"):
+            return f"{name}: upload failed (size {rep.get('size', '?')})."
+        if not auto:
+            return uploaded + "."
+        if rep.get("started"):
+            return uploaded + " — print started."
+        start = rep.get("start_report") or {}
+        return (f"{name}: uploaded, but the start was rejected "
+                f"(result {start.get('result')}: {start.get('msg', '?')}). "
+                f"Use printer_print with filename={rep.get('filename')!r} to retry.")
+
+    try:
+        import anycubic
+    except ImportError:
+        from . import anycubic
+
+    if cfg["kind"] == "anycubic":
+        rep = anycubic.upload_and_print(cfg["host"], path, print_after=auto)
+        if rep.get("code") == 200:
+            return uploaded + (" — print started." if auto else ".")
+        return (f"{name}: upload/start rejected "
+                f"(code {rep.get('code')}: {rep.get('msg', '?')})")
+
+    # moonraker
+    with open(path, "rb") as fh:
+        r = requests.post(f"{_m_base()}/server/files/upload",
+                          files={"file": (fname, fh)},
+                          headers=_m_headers(), timeout=120)
+    r.raise_for_status()
+    out = f"{name}: uploaded to gcodes root: {fname}"
+    if auto:
+        return out + "\n" + _m_print(fname)
+    return out
+
+
 # ================================================================ register
 
 def register(ctx) -> None:
+    global _agent
+    _agent = ctx
     ctx.register_tool(name="printer_status", toolset="printwatch", schema=STATUS_SCHEMA, handler=_status)
     ctx.register_tool(name="printer_files", toolset="printwatch", schema=FILES_SCHEMA, handler=_files)
     ctx.register_tool(name="printer_print", toolset="printwatch", schema=PRINT_SCHEMA, handler=_print_cmd)
+    ctx.register_tool(name="printer_upload", toolset="printwatch", schema=UPLOAD_SCHEMA, handler=_upload)
     ctx.register_tool(name="printer_cancel", toolset="printwatch", schema=CANCEL_SCHEMA, handler=_cancel)
     ctx.register_tool(name="printer_pause_resume", toolset="printwatch", schema=PAUSE_SCHEMA, handler=_pause_resume)
     ctx.register_tool(name="printer_snapshot", toolset="printwatch", schema=SNAPSHOT_SCHEMA, handler=_snapshot)

@@ -297,7 +297,12 @@ def upload_and_print(host: str, serial: str, access_code: str, gcode_path: str,
 
 def camera_snapshot(host: str, serial: str, access_code: str, out_path: str,
                     settle: float = 2.0) -> str:
-    """Grab a frame from the printer's RTSP stream via ffmpeg."""
+    """Grab a frame from the printer's RTSP stream via ffmpeg.
+
+    Note: ffmpeg takes the RTSP url (which embeds the LAN access code) on its
+    command line — it appears in the local process table for the duration of
+    the capture only. Nothing logs the command; error output is scrubbed below.
+    """
     import subprocess
 
     out = Path(out_path)
@@ -308,5 +313,6 @@ def camera_snapshot(host: str, serial: str, access_code: str, out_path: str,
            "-frames:v", "1", "-q:v", "3", str(out)]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     if not out.exists() or out.stat().st_size < 1000:
-        raise BambuError(f"camera capture failed: {(r.stderr or '')[-200:]}")
+        err = (r.stderr or "").replace(access_code, "***")
+        raise BambuError(f"camera capture failed: {err[-200:]}")
     return str(out)
