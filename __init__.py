@@ -94,14 +94,12 @@ UPLOAD_SCHEMA = {
 
 CANCEL_SCHEMA = {
     "name": "printer_cancel",
-    "description": "Cancel the current print job. ALWAYS confirm with the user first.",
+    "description": "Cancel the current print job. Asks for your approval in chat before it runs.",
     "parameters": {
         "type": "object",
         "properties": {
             "printer": {"type": "string", "description": "Printer name."},
-            "confirm": {"type": "boolean", "description": "Must be true to actually cancel."},
         },
-        "required": ["confirm"],
     },
 }
 
@@ -358,9 +356,7 @@ def _m_print(filename: str) -> str:
     return f"Print started: {filename}"
 
 
-def _m_cancel(confirm: bool = False) -> str:
-    if not confirm:
-        return "Not cancelling — call again with confirm=true to stop the print."
+def _m_cancel() -> str:
     r = requests.post(f"{_m_base()}/printer/print/cancel", headers=_m_headers(), timeout=5)
     r.raise_for_status()
     return "Print cancelled."
@@ -511,16 +507,14 @@ def _print_cmd_impl(printer: str | None = None, filename: str = "") -> str:
 def _cancel(args: dict, **kwargs) -> str:
     try:
         a = args or {}
-        return _cancel_impl(a.get("printer"), bool(a.get("confirm", False)))
+        return _cancel_impl(a.get("printer"))
     except Exception as e:
         return _err(e)
 
 
-def _cancel_impl(printer: str | None = None, confirm: bool = False) -> str:
+def _cancel_impl(printer: str | None = None) -> str:
     printers = _printers()
     name, cfg = _resolve(printer, printers)
-    if not confirm:
-        return "Not cancelling — call again with confirm=true to stop the print."
     if cfg["kind"] == "bambu":
         host, serial, code = _bambu_args(cfg)
         rep = _bambu_mod().print_control(host, serial, code, "stop")
@@ -534,7 +528,7 @@ def _cancel_impl(printer: str | None = None, confirm: bool = False) -> str:
         rep = anycubic.print_control(cfg["host"], "stop")
         return f"{name}: print cancelled (code {rep.get('code')})." if rep.get("code") == 200 \
             else f"{name}: cancel rejected (code {rep.get('code')})"
-    return _m_cancel(confirm)
+    return _m_cancel()
 
 
 def _pause_resume(args: dict, **kwargs) -> str:
@@ -660,9 +654,55 @@ def _upload_impl(printer: str | None = None, path: str = "", auto: bool = True) 
     return out
 
 
+# ================================================================ approval gate
+#
+# Tools that drive physical hardware (print start, upload+print, pause/resume,
+# cancel) require a HUMAN approval inside Hermes on every call: this pre_tool_call
+# hook returns {"action": "approve", "message": ...} and the runtime runs its own
+# approval gate (once/session/always/deny; fails closed when no human is present,
+# e.g. under cron). Read-only tools (status/files/snapshot) stay prompt-free.
+
+_APPROVAL_TOOLS = frozenset(
+    {"printer_print", "printer_upload", "printer_pause_resume", "printer_cancel"}
+)
+
+
+def _approval_printer_label(args: dict) -> str:
+    name = (args.get("printer") or "").strip()
+    if name:
+        return name
+    try:
+        printers = _printers()
+    except Exception:
+        return "the printer"
+    if len(printers) == 1:
+        return next(iter(printers))
+    return f"one of: {', '.join(sorted(printers))}"
+
+
+def _on_pre_tool_call(tool_name: str = "", args: dict | None = None, **_) -> dict | None:
+    """pre_tool_call hook — escalate hardware-moving tools to the human approval gate."""
+    if tool_name not in _APPROVAL_TOOLS:
+        return None
+    a = args if isinstance(args, dict) else {}
+    printer = _approval_printer_label(a)
+    if tool_name == "printer_print":
+        msg = f"Start print of {a.get('filename') or '<no filename>'} on {printer}?"
+    elif tool_name == "printer_upload":
+        fname = Path(str(a.get("path") or "")).name or "<no file>"
+        auto = "" if a.get("auto_print", True) else " (upload only, no auto-print)"
+        msg = f"Upload {fname} to {printer}{auto} and start the print?"
+    elif tool_name == "printer_pause_resume":
+        msg = f"{(a.get('action') or 'pause/resume').capitalize()} the print on {printer}?"
+    else:  # printer_cancel
+        msg = f"Cancel the current print on {printer}?"
+    return {"action": "approve", "message": msg}
+
+
 # ================================================================ register
 
 def register(ctx) -> None:
+    ctx.register_hook("pre_tool_call", _on_pre_tool_call)
     ctx.register_tool(name="printer_status", toolset="printwatch", schema=STATUS_SCHEMA, handler=_status)
     ctx.register_tool(name="printer_files", toolset="printwatch", schema=FILES_SCHEMA, handler=_files)
     ctx.register_tool(name="printer_print", toolset="printwatch", schema=PRINT_SCHEMA, handler=_print_cmd)

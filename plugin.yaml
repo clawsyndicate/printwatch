@@ -1,6 +1,6 @@
 id: printwatch
 name: PrintWatch
-version: 0.4.2
+version: 0.4.3
 description: >
   Control and monitor 3D printers through your Hermes agent. Three protocol
   families: Klipper/Moonraker printers over HTTP, stock-firmware Anycubic
@@ -12,6 +12,8 @@ description: >
   pipeline (raw .gcode -> Anycubic .gcode.3mf dialect -> upload -> print).
 category: tools
 entrypoint: __init__.py
+provides_hooks:
+  - pre_tool_call
 requires_env:
   - name: PRINTWATCH_PRINTERS
     description: >

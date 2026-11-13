@@ -26,7 +26,7 @@ photo when something needs eyes.
 | `printer_files` | List files on printer storage |
 | `printer_print` | Start a print by filename (as listed by `printer_files`) |
 | `printer_upload` | Send a local `.gcode` to the printer (auto-packaged into the printer's dialect) and optionally start it |
-| `printer_cancel` | Cancel the running job |
+| `printer_cancel` | Cancel the running job (asks for your approval in chat first) |
 | `printer_pause_resume` | Pause / resume |
 | `printer_snapshot` | Grab a camera frame and drop it in your chat |
 
@@ -42,6 +42,7 @@ No Anycubic account, no Slicer Next, no hands.
 
 - **Stock firmware only** — LAN Mode is a built-in feature; nothing is flashed or rooted
 - **Local network only** — no cloud relay, no telemetry
+- **Hardware actions are approval-gated** — print/upload/pause/resume/cancel route through a `pre_tool_call` hook into Hermes's own human-approval gate (once/session/always/deny; fails closed when no human is present, e.g. under cron)
 - **Credentials via `agent.secret_scope`** — config values are read through Hermes's
   scoped secret layer, never `os.environ`
 - Session tokens are per-session, in-memory, never logged or persisted
