@@ -3,6 +3,8 @@
 A Hermes Agent plugin for controlling 3D printers over the local network — no cloud,
 no rooting, stock firmware.
 
+*Maintained by the owner's Hermes agent under his direction.*
+
 **Three protocol families:**
 - **Anycubic Kobra** printers via the built-in **LAN Mode** API (reverse-engineered,
   clean-room implementation — handshake, MQTT telemetry, file management, print control,
