@@ -1,6 +1,6 @@
 id: printwatch
 name: PrintWatch
-version: 0.4.1
+version: 0.4.2
 description: >
   Control and monitor 3D printers through your Hermes agent. Three protocol
   families: Klipper/Moonraker printers over HTTP, stock-firmware Anycubic
@@ -40,9 +40,9 @@ permissions:
     Talks only to user-configured printer endpoints on the LAN. No external
     services, no telemetry, no credentials stored. Printer session tokens are
     per-session, in-memory only, and never logged. Credential values are read
-    through agent.secret_scope (never os.environ). Bambu RTSP snapshots run
-    ffmpeg with the access code in the local process argv for the duration of
-    the capture (~2s, local-only exposure).
+    through agent.secret_scope (never the raw process environment). Bambu RTSP
+    snapshots run ffmpeg with the access code in the local process argv for the
+    duration of the capture (~2s, local-only exposure).
 provides_tools:
   - printer_status
   - printer_files

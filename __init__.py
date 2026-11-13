@@ -135,32 +135,29 @@ SNAPSHOT_SCHEMA = {
 
 # ================================================================ config
 
-_agent = None  # stashed by register(): the Hermes agent (secret_scope lives here)
-
 
 def _secret(name: str) -> str:
-    """Scoped credential read. Inside Hermes: agent.secret_scope.get_secret only —
-    catalog policy forbids plugins reading os.environ for credentials. Standalone
-    dev runs (no agent object) fall back to the plain environment."""
-    if _agent is not None:
-        scope = getattr(_agent, "secret_scope", None)
-        if scope is not None:
-            try:
-                v = scope.get_secret(name)
-            except Exception:
-                v = None
-            if v:
-                return str(v).strip()
-        return ""  # inside Hermes: fail closed, no env fallback
-    return os.environ.get(name, "").strip()
+    """Scoped credential read via agent.secret_scope (profile-aware, with the
+    upstream env fall-through). Outside Hermes (standalone dev runs) falls back
+    to the plain environment."""
+    try:
+        from agent.secret_scope import get_secret
+    except ImportError:
+        return os.environ.get(name, "").strip()
+    return (get_secret(name) or "").strip()
 
 
 def _plugin_data_dir() -> str:
-    """HERMES_HOME/plugin-data/printwatch/ — the catalog-standard plugin data dir."""
-    base = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
-    out = os.path.join(base, "plugin-data", "printwatch")
-    os.makedirs(out, exist_ok=True)
-    return out
+    """The plugin's data dir via plugins.plugin_storage (follows the active Hermes
+    profile); standalone dev falls back to ~/.hermes/plugin-data/printwatch."""
+    try:
+        from plugins.plugin_storage import plugin_data_dir
+        return str(plugin_data_dir("printwatch"))
+    except ImportError:
+        base = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
+        out = os.path.join(base, "plugin-data", "printwatch")
+        os.makedirs(out, exist_ok=True)
+        return out
 
 
 def _printers() -> dict[str, dict]:
@@ -666,8 +663,6 @@ def _upload_impl(printer: str | None = None, path: str = "", auto: bool = True) 
 # ================================================================ register
 
 def register(ctx) -> None:
-    global _agent
-    _agent = ctx
     ctx.register_tool(name="printer_status", toolset="printwatch", schema=STATUS_SCHEMA, handler=_status)
     ctx.register_tool(name="printer_files", toolset="printwatch", schema=FILES_SCHEMA, handler=_files)
     ctx.register_tool(name="printer_print", toolset="printwatch", schema=PRINT_SCHEMA, handler=_print_cmd)
