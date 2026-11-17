@@ -1,7 +1,20 @@
 # PrintWatch — Hermes Plugin Hackathon 2026 build plan
 
-**Deadline: Wed Nov 11, 5PM EST** (submit Tue Nov 10 EOD for buffer)
-Entry = plugin PR to catalog + <90s demo video on X + form.
+**HACKATHON COMPLETE — MERGED 2026-11-14 (PR #149803, teknium1, 247306b026). Build-on era: features are ours; publish when the owner says so.**
+
+## POST-MERGE ROADMAP (2026-11-17)
+- [x] **v0.5.0 (6263061): `printer_slice`** — agent-side slicing, live-verified (cube → 51 layers, 11/11 dialect checks)
+- [x] **v0.6.0 (4cf4725): fleet watcher** — done/paused/stall/offline events → Telegram direct delivery; state machine unit-tested; service active on Nexus
+- [ ] **LIVE-FIRE TEST (tonight, owner home):** power a Kobra → run a real print → verify watcher events land in Telegram (done + one pause or stall at minimum); confirm printer_slice output uploads to a real printer
+- [ ] **PUBLISH (after live-fire passes):** update PR to NousResearch/hermes-agent pinning v0.6.0 — bumps manifest version, re-pins entry sha, delta comment
+- [ ] **v0.7+ multi-family expansion (user priority: "not everybody has our printers"):**
+      1. Watcher coverage for Moonraker + Bambu (websockets/MQTT push — makes the buzz universal)
+      2. Creality K1 adapter (Klipper fork — likely thin Moonraker config adapter)
+      3. Prusa PrusaLink adapter (documented HTTP API)
+      4. Elegoo Neptune (community-documented, partially Klipper)
+      Every added family = free distribution to all installed catalog users.
+
+## Hackathon history (2026-11-05 → 11-14)
 
 ## Day plan
 - [x] **Wed Nov 5: scaffold** — manifest, 5 tools, clean `plugins doctor` pass
