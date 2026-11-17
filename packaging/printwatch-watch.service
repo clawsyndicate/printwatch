@@ -6,7 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=krilla
-WorkingDirectory=/home/krilla/projects/printwatch
+WorkingDirectory=%h/projects/printwatch
+EnvironmentFile=%h/.hermes/plugin-data/printwatch/watcher.env
 ExecStart=/usr/bin/python3 /home/krilla/projects/printwatch/watcher_loop.py
 Restart=on-failure
 RestartSec=20

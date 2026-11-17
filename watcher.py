@@ -143,18 +143,31 @@ class PrinterWatch:
         return events
 
 
-def post_event(url: str, event: dict, timeout: float = 8.0) -> None:
-    """Deliver one event to the Hermes webhook endpoint (fire-and-forget log on error)."""
+def post_event(url: str, event: dict, timeout: float = 8.0,
+               secret: str | None = None) -> None:
+    """Deliver one event to the Hermes webhook endpoint.
+
+    Signs with HMAC-SHA256 (hex digest of the raw body) when a subscription
+    secret is configured - Hermes validates the signature on EVERY incoming
+    POST and rejects unsigned requests with 401 (verified 2026-11-17). The
+    secret is read from local config and sent ONLY to the configured sink
+    URL; never logged, never included in the event payload.
+    """
     data = json.dumps(event).encode()
-    req = urllib.request.Request(url, data=data,
-                                 headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if secret:
+        import hashlib
+        import hmac as _hmac
+        sig = _hmac.new(secret.encode(), data, hashlib.sha256).hexdigest()
+        headers["X-Signature"] = f"sha256={sig}"
+    req = urllib.request.Request(url, data=data, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         if resp.status >= 300:
             raise RuntimeError(f"webhook sink returned {resp.status}")
 
 
 def run_loop(config_path: str, webhook_url: str, interval: float = 60.0,
-             once: bool = False) -> None:
+             once: bool = False, secret: str | None = None) -> None:
     """Main loop. once=True = single sweep (for testing)."""
     printers = _load_printers(Path(config_path))
     cfg = json.loads(Path(config_path).read_text())
@@ -164,7 +177,7 @@ def run_loop(config_path: str, webhook_url: str, interval: float = 60.0,
         for w in watches:
             for ev in w.poll():
                 try:
-                    post_event(webhook_url, ev)
+                    post_event(webhook_url, ev, secret=secret)
                 except Exception as e:
                     # never let a sink failure kill the watcher
                     print(f"sink error for {ev.get('event')}: {e}", flush=True)

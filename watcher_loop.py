@@ -24,6 +24,9 @@ def main() -> None:
     printers = cfg.get("printers") or {}
     url = cfg.get("webhook_url") or ""
     interval = float(cfg.get("interval_s", 60))
+    # HMAC secret lives in Hermes's own subscription store; the watcher reads
+    # it via env injection (systemd EnvironmentFile) and NEVER logs it.
+    secret = os.environ.get("PRINTWATCH_WEBHOOK_SECRET") or None
     if not printers or not url:
         print("watcher.json needs 'printers' (name->host map) and 'webhook_url'",
               flush=True)
@@ -31,7 +34,7 @@ def main() -> None:
     tmp = os.path.join(DATA_DIR, "watcher-printers.json")
     with open(tmp, "w") as fh:
         json.dump(printers, fh)
-    watcher.run_loop(tmp, url, interval=interval)
+    watcher.run_loop(tmp, url, interval=interval, secret=secret)
 
 
 if __name__ == "__main__":
