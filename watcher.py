@@ -159,7 +159,7 @@ def post_event(url: str, event: dict, timeout: float = 8.0,
         import hashlib
         import hmac as _hmac
         sig = _hmac.new(secret.encode(), data, hashlib.sha256).hexdigest()
-        headers["X-Signature"] = f"sha256={sig}"
+        headers["X-Hub-Signature-256"] = f"sha256={sig}"  # GitHub-style header (gateway validation: hermes_cli/webhook.py)
     req = urllib.request.Request(url, data=data, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         if resp.status >= 300:
