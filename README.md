@@ -51,6 +51,20 @@ No Anycubic account, no Slicer Next, no hands.
 Text your agent an STL; it prints. Slicing is host-side only (prompt-free) — the actual
 hardware step stays behind the approval gate.
 
+## Fleet watcher (v0.6.0 — prints report themselves)
+
+A companion service, `printwatch-watch`, runs on the agent host and watches every
+LAN-Mode printer: **print done**, **print paused**, **stalled** (the pause:3
+phantom-filament signature — reported once, after a grace period), and printer
+back-online. Events route through a Hermes webhook subscription straight to your
+chat — direct delivery, zero LLM cost. The watcher is strictly observe-only: it
+never sends a single command to a printer; humans (or approval-gated tools) act.
+
+Runs as a systemd **user** unit (`packaging/printwatch-watch.service`), config at
+`~/.hermes/plugin-data/printwatch/watcher.json` (printer map, webhook URL, poll
+interval; `alert_offline` defaults to false because home printers are usually
+just powered off — offline chirps would be noise).
+
 ## Security posture
 
 - **Stock firmware only** — LAN Mode is a built-in feature; nothing is flashed or rooted
