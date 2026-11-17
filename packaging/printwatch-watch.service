@@ -1,0 +1,21 @@
+[Unit]
+Description=PrintWatch fleet watcher — Anycubic LAN telemetry monitor (observes only, never commands)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=krilla
+WorkingDirectory=/home/krilla/projects/printwatch
+ExecStart=/usr/bin/python3 /home/krilla/projects/printwatch/watcher_loop.py
+Restart=on-failure
+RestartSec=20
+# hardening: watcher is observe-only; no writable paths beyond its own data
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/krilla/.hermes/plugin-data/printwatch
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
