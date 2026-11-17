@@ -654,6 +654,75 @@ def _upload_impl(printer: str | None = None, path: str = "", auto: bool = True) 
     return out
 
 
+# ================================================================ slicing (v0.5.0)
+
+SLICE_SCHEMA = {
+    "name": "printer_slice",
+    "description": (
+        "Slice 3D model file(s) into a printable, firmware-safe Anycubic "
+        ".gcode.3mf package using the bundled Kobra 3 V2 profile. Safe: runs "
+        "entirely on the agent host, touches no printer. Multiple files are "
+        "sliced as ONE combined plate. Returns the package path plus layer "
+        "count, estimated time, and filament estimate — pass that path to "
+        "printer_upload (which asks for approval) to print it."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "files": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Local path(s) to model file(s): .stl, .3mf, or .obj.",
+            },
+            "out_name": {
+                "type": "string",
+                "description": "Optional base name for the output package (default: slice-<timestamp>).",
+            },
+            "center": {
+                "type": "string",
+                "description": "Optional plate center as 'X,Y' in mm (default '127.5,127.5' = center of the 255x255 bed).",
+            },
+        },
+        "required": ["files"],
+    },
+}
+
+
+def _slice(args: dict, **kwargs) -> str:
+    try:
+        a = args or {}
+        files = a.get("files") or []
+        if isinstance(files, str):
+            files = [files]
+        try:
+            import slicing as _pw_slicing
+        except ImportError:
+            from . import slicing as _pw_slicing
+        r = _pw_slicing.slice_models(
+            [str(f) for f in files],
+            out_name=(a.get("out_name") or None) and str(a.get("out_name")),
+            center=str(a.get("center") or "127.5,127.5"),
+            workdir=_plugin_data_dir(),
+        )
+        return (
+            f"Sliced OK ({r['profile']}).\n"
+            f"sources: {r['sources']}\n"
+            f"package: {r['package']}\n"
+            f"layers: {r['layers']}  est. time: {r['est_time']}  "
+            f"filament: {r['filament_cm3']:.1f} cm3\n"
+            f"Ready. Call printer_upload with path={r['package']!r} to send it "
+            f"to a printer (it will ask for approval before printing)."
+        )
+    except FileNotFoundError as e:
+        return f"ERROR: {e}"
+    except ValueError as e:
+        return f"ERROR: {e}"
+    except RuntimeError as e:
+        return f"ERROR: {e}"
+    except Exception as e:
+        return _err(e)
+
+
 # ================================================================ approval gate
 #
 # Tools that drive physical hardware (print start, upload+print, pause/resume,
@@ -710,3 +779,4 @@ def register(ctx) -> None:
     ctx.register_tool(name="printer_cancel", toolset="printwatch", schema=CANCEL_SCHEMA, handler=_cancel)
     ctx.register_tool(name="printer_pause_resume", toolset="printwatch", schema=PAUSE_SCHEMA, handler=_pause_resume)
     ctx.register_tool(name="printer_snapshot", toolset="printwatch", schema=SNAPSHOT_SCHEMA, handler=_snapshot)
+    ctx.register_tool(name="printer_slice", toolset="printwatch", schema=SLICE_SCHEMA, handler=_slice)

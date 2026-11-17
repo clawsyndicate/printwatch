@@ -1,6 +1,6 @@
 id: printwatch
 name: PrintWatch
-version: 0.4.3
+version: 0.5.0
 description: >
   Control and monitor 3D printers through your Hermes agent. Three protocol
   families: Klipper/Moonraker printers over HTTP, stock-firmware Anycubic
@@ -8,8 +8,11 @@ description: >
   and Bambu Lab printers over their local MQTT/FTPS interface (access code).
   Multi-printer: ask for one printer or a summary table of all. File listing,
   print start/pause/resume/cancel, file upload with auto-dialect packaging,
-  camera snapshots delivered into chat, and a headless slice-to-print
-  pipeline (raw .gcode -> Anycubic .gcode.3mf dialect -> upload -> print).
+  camera snapshots delivered into chat, and a full slice-to-print pipeline:
+  model files (.stl/.3mf/.obj) are sliced on the agent host with a bundled
+  Anycubic Kobra 3 V2 profile, packaged into the Anycubic .gcode.3mf dialect,
+  then uploaded and printed (upload remains approval-gated). Requires the
+  prusa-slicer binary on the agent host (apt install prusa-slicer).
 category: tools
 entrypoint: __init__.py
 provides_hooks:
@@ -53,3 +56,4 @@ provides_tools:
   - printer_cancel
   - printer_pause_resume
   - printer_snapshot
+  - printer_slice

@@ -31,14 +31,25 @@ photo when something needs eyes.
 | `printer_cancel` | Cancel the running job (asks for your approval in chat first) |
 | `printer_pause_resume` | Pause / resume |
 | `printer_snapshot` | Grab a camera frame and drop it in your chat |
+| `printer_slice` | Slice model files (.stl/.3mf/.obj) into a printable package on the agent host |
 
 ## Headless slice-to-print (the fun part)
 
-`printer_upload` takes a raw `.gcode` from any slicer and repackages it into the exact
-`.gcode.3mf` dialect Anycubic's firmware requires (see `kobra_dialect.py`) — header
-blocks, `M75`, uppercase-MD5 sidecar, `X-ACNext` slice info — then uploads it over
+**v0.5.0 — model files in, print out.** `printer_slice` takes `.stl`/`.3mf`/`.obj` file(s)
+and slices them on the agent host with PrusaSlicer headless + a bundled Anycubic Kobra 3 V2
+profile (converted from Anycubic's own Slicer Next preset — the machine's real start macro,
+limits, and temps, never invented). It returns the printable package path plus layer count,
+estimated time, and filament estimate. Multiple files slice as ONE combined plate. Requires
+`prusa-slicer` on the agent host (`apt install prusa-slicer`).
+
+`printer_upload` takes a raw `.gcode` (or the package printer_slice produced) and repackages
+it into the exact `.gcode.3mf` dialect Anycubic's firmware requires (see `kobra_dialect.py`) —
+header blocks, `M75`, uppercase-MD5 sidecar, `X-ACNext` slice info — then uploads it over
 LAN and starts the print. Bambu `.gcode` files are packed into a 3mf the same way.
 No Anycubic account, no Slicer Next, no hands.
+
+Text your agent an STL; it prints. Slicing is host-side only (prompt-free) — the actual
+hardware step stays behind the approval gate.
 
 ## Security posture
 
