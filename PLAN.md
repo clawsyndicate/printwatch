@@ -3,6 +3,7 @@
 **HACKATHON COMPLETE — MERGED 2026-11-14 (PR #149803, teknium1, 247306b026). Build-on era: features are ours; publish when the owner says so.**
 
 ## POST-MERGE ROADMAP (2026-11-17)
+- [x] **SECURITY HARDENING from the Imagination Studio audit** (sibling hackathon plugin, github.com/Keys-Wasserman/hermes-imagination-studio): applied their access-key lesson to the watcher - unsigned webhook POSTs were rejected 401 by the gateway (would have failed live-fire); watcher now HMAC-signs with X-Hub-Signature-256 (GitHub-style, verified 200 via the real code path), secret lives in a 0600 systemd EnvironmentFile, never logged, sent only to the configured sink URL. REMAINING before publish: control-char scrubbing on event fields (filename comes from printer telemetry - untrusted), range-checks on schema numbers, formalize the state-machine tests into tests/.
 - [x] **v0.5.0 (6263061): `printer_slice`** — agent-side slicing, live-verified (cube → 51 layers, 11/11 dialect checks)
 - [x] **v0.6.0 (4cf4725): fleet watcher** — done/paused/stall/offline events → Telegram direct delivery; state machine unit-tested; service active on Nexus
 - [ ] **LIVE-FIRE TEST (tonight, owner home):** power a Kobra → run a real print → verify watcher events land in Telegram (done + one pause or stall at minimum); confirm printer_slice output uploads to a real printer
